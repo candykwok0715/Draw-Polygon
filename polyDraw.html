@@ -1,0 +1,604 @@
+<!--
+	Student Name = Kwok Sin Man 
+	Student Number = 13090903d
+	Comp4422 Assignment 1 - polyShow.html
+-->
+<!doctype html>
+<html>
+<head>
+<title>Poly Draw</title>
+    <style>
+      body {
+        margin: 0px;
+        padding: 0px;		
+		background-color: white;
+      }
+	  canvas {
+		background-color: black;
+	  }
+    </style>
+	<script id="shader-vs" type="x-shader/x-vertex">
+		attribute vec2 aVertexPosition;
+		void main(void) {
+			gl_PointSize = 5.0;
+			gl_Position = vec4(aVertexPosition, 0.0, 1.0);
+		}
+	</script>
+	<script id="shader-fs" type="x-shader/x-fragment">
+		void main(void) {
+			gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+		}
+	</script>
+
+	<script>
+		var gl = null,
+			canvas = null,
+			glProgram = null,
+			fragmentShader = null,
+			vertexShader = null;
+
+		var vertexPositionAttribute = null,
+			pointVerticeBuffer = null;
+
+		var pointVertices = [];
+		var drawingMode = false ;
+		var repositioningMode = false ;
+		var pickUpVertex = [];
+		var mouseMoveVertex = false;
+		var exitProgram = false;
+		
+	
+		window.addEventListener('keydown',this.keydown,false); // create Keyborad listener
+		
+		function keydown(e) {
+			//alert(e.keyCode);
+			var code = e.keyCode;
+			
+			if (!drawingMode && !repositioningMode && code==27){//exit the program
+				alert("This program is closed. Please reload the page if you want to restart the program.");
+				exitProgram = true;
+			}
+			if(!exitProgram){
+				if (code == 68 && !repositioningMode){   // user pass d-key to enter into drawing mode
+					if (pointVertices!=null)  pointVertices = []; //clear all point
+					drawPoint();
+					drawingMode = true;
+				}
+				if (drawingMode && code == 27){ // in the drawing Mode, user pass ESC to exit 
+					drawingMode = false;
+					drawClosedPolyline();
+				}
+				
+				if (code == 83 && !drawingMode && !repositioningMode){ // user pass s-key to valid polygon and save the current polygon
+					// will do something
+					if (validPolygon()){
+						//valid, save the current polygon into file data/polygon.txt
+						saveTextAsFile();
+					}
+					else{
+						//not valid othing should be saved and an error message should be displayed.
+						alert("This is not a valid polygon.");
+					}
+				}
+				
+				if (code == 86 && !drawingMode){ // user pass v-key to enter into repositioning mode
+					repositioningMode = true;
+				}
+				
+				if (repositioningMode && code == 27){ // in the repositioning Mode, user pass ESC to exit 
+					repositioningMode = false;
+					pickUpVertex = [];
+					mouseMoveVertex = false;
+				}
+			}
+			//alert("drawingMode ="+drawingMode +" repositioningMode ="+repositioningMode);	
+		}
+
+		
+		
+		function initWebGL()
+		{
+			canvas = document.getElementById("myCanvas");
+			gl = canvas.getContext("experimental-webgl");
+
+			if(gl)
+			{
+				setupWebGL();
+				initBuffers();
+				initShaders();
+				drawScene();
+			}else{
+				alert( "Error: Your browser does not appear to" + "support WebGL.");
+			}
+		}
+
+		function setupWebGL()
+		{
+			//set the clear color to a shade of green
+			gl.clearColor(0.0, 0.0, 0.0, 1.0);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+		}
+
+		function initBuffers()
+		{
+		}
+		
+		function initShaders()
+		{
+			//get shader source
+			var fs_source = document.getElementById('shader-fs').innerHTML,
+			vs_source = document.getElementById('shader-vs').innerHTML;
+
+			//compile shaders
+			vertexShader = makeShader(vs_source, gl.VERTEX_SHADER);
+			fragmentShader = makeShader(fs_source, gl.FRAGMENT_SHADER);
+
+			//create program
+			glProgram = gl.createProgram();
+
+			//attach and link shaders to the program
+			gl.attachShader(glProgram, vertexShader);
+			gl.attachShader(glProgram, fragmentShader);
+			gl.linkProgram(glProgram);
+			if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
+				alert("Unable to initialize the shader program.");
+			}
+
+			//use program
+			gl.useProgram(glProgram);
+		}
+
+		function makeShader(src, type)
+		{
+			//compile the vertex shader
+			var shader = gl.createShader(type);
+			gl.shaderSource(shader, src);
+			gl.compileShader(shader);
+			if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+				alert("Error compiling shader: " + gl.getShaderInfoLog(shader));
+			}
+			return shader;
+		}
+
+		function drawScene()
+		{
+			canvas.onmousedown = function(e) {
+				//drawing mode
+				if (drawingMode && e.which == 1){ //e.which ==1 means Left mouse button
+						addPointCoordinate(e,pointVertices.length,pointVertices.length+1);
+						drawPoint();
+				}
+				//pick a vertex and reposition
+				if(repositioningMode && e.which == 1){
+					//which vertex is picked up 
+					pickUpVertex = isPickUpVertex(e);
+					if (pickUpVertex!=null){
+						mouseMoveVertex = true;
+					}
+				}
+			}
+			
+			canvas.onmousemove  = function(e){
+				if (repositioningMode && mouseMoveVertex){
+					var mouseCoordinate = getMouseCoordinate(e);
+					addPointCoordinate(e,pickUpVertex["x"],pickUpVertex["y"]);
+					drawClosedPolyline();
+					
+				}
+			}
+			canvas.onmouseup = function(e){
+				if (repositioningMode && mouseMoveVertex){
+					pickUpVertex = [];
+					mouseMoveVertex = false;
+				}
+			}
+			
+		}
+		
+		function addPointCoordinate(e,arrayPositionX,arrayPositionY) {	
+			var mouseCoordinate = getMouseCoordinate(e);
+			pointVertices[arrayPositionX] = mouseCoordinate["x"];
+			pointVertices[arrayPositionY] = mouseCoordinate["y"];
+		}
+		
+		function getMouseCoordinate(e){
+			// get the point of mouse coordinate
+			var mouseValue = [];
+			var rect = canvas.getBoundingClientRect();
+			var x = e.pageX - rect.left;  // mouse point the complete document/page  -  the gap between canvas and browser window
+            var y = e.pageY - rect.top;
+
+			mouseValue["x"] = (x - canvas.width / 2) / (canvas.width / 2);
+			mouseValue["y"] = (-1) * ( y - canvas.height / 2) / (canvas.height / 2);		
+			return mouseValue;
+		}
+
+		//if User pick up the vertex, return no. of vertex. If user pick up empty, return null
+		function isPickUpVertex(e){ 
+			var mouseCoordinate = getMouseCoordinate(e);
+			var index = 0;
+			var ArrayPosition = [];
+			while(index < pointVertices.length){
+				if(mouseCoordinate["x"]-0.01 <= pointVertices[index] && pointVertices[index] <= mouseCoordinate["x"]+0.01){
+					if(mouseCoordinate["y"]-0.01 <= pointVertices[index+1] && pointVertices[index+1] <= mouseCoordinate["y"]+0.01){
+						ArrayPosition["x"] = index ;
+						ArrayPosition["y"] = index+1 ;
+					}
+				}
+				index++;
+				index++;
+			}
+			return ArrayPosition;
+		}
+		
+		function drawPoint(){
+			if (pointVertices!=null){
+				setupWebGL();	
+				pointVerticeBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, pointVerticeBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointVertices), gl.STATIC_DRAW);
+				vertexPositionAttribute = gl.getAttribLocation(glProgram,"aVertexPosition");
+				gl.enableVertexAttribArray(vertexPositionAttribute);
+				gl.vertexAttribPointer(vertexPositionAttribute, 2,gl.FLOAT, false, 0, 0);
+				gl.drawArrays(gl.POINTS, 0, pointVertices.length/2);
+			}
+		}
+		
+		function drawClosedPolyline(){
+			if (pointVertices!=null ){
+				setupWebGL();
+				pointVerticeBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, pointVerticeBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointVertices), gl.STATIC_DRAW);
+				vertexPositionAttribute = gl.getAttribLocation(glProgram,"aVertexPosition");
+				gl.enableVertexAttribArray(vertexPositionAttribute);
+				gl.vertexAttribPointer(vertexPositionAttribute, 2,gl.FLOAT, false, 0, 0);
+				gl.drawArrays(gl.POINTS, 0, pointVertices.length/2); //draw vertex 
+				if (pointVertices.length/2 > 1){ // not only draw one point
+					gl.drawArrays(gl.LINE_LOOP, 0, pointVertices.length/2); //draw closed polyline
+				}
+			}
+		}
+		
+		function validPolygon(){
+			//the number of vertex must be greater than 2 and polygon cannot intersect and must convex
+			//if (pointVertices.length/2 > 2 && checkNoIntersect() ){
+			if (pointVertices.length/2 > 2 && checkNoIntersect() && checkIsConvex() ){
+				return true;
+			}
+			else{
+				return false;
+			}
+		}
+		
+		function checkNoIntersect(){ // return true= no Intersect, false = has Intersect
+			var lineEquation = [];
+			var index =0;
+			var numberOfLine=0;
+			
+			//build line Equestion  Ax + By = C 
+			while(numberOfLine < pointVertices.length/2){
+				//get 2 point coordinates
+				var point1x;
+				var point1y;
+				var point2x;
+				var point2y;
+				index = numberOfLine*2;
+				
+				point1x = pointVertices[index];
+				index++;
+				point1y = pointVertices[index];
+				index++;
+
+				// last point
+				if(index >= pointVertices.length-1){
+					point2x = pointVertices[0];
+					point2y = pointVertices[1];
+				}
+				else{
+					point2x = pointVertices[index];
+					index++;
+					point2y = pointVertices[index];
+					index++;
+				}
+				//alert("index="+index+"point1x="+point1x+" point1y="+point1y + " point2x="+point2x+" point2y="+point2y);
+				
+				//build line equation 
+				var a , b, c;
+				a = point2y - point1y; // A = y2-y1
+				b = point1x - point2x; // B = x1-x2
+				c = a * point1x + b * point1y //A*x1+B*y1
+				
+				var temp = [a,b,c,point1x,point1y,point2x,point2y]
+				lineEquation.push(temp);	
+				numberOfLine++;
+			}
+			
+			//check Intersect
+			var i, j;
+			for (i = 0; i < lineEquation.length-1; i++){
+				var a1 = lineEquation[i][0];
+				var b1 = lineEquation[i][1];
+				var c1 = lineEquation[i][2];
+				for ( j= i+1; j< lineEquation.length; j++){
+					//alert("i="+i+"  j="+j);
+					var a2 = lineEquation[j][0];
+					var b2 = lineEquation[j][1];
+					var c2 = lineEquation[j][2];
+					
+					var det = a1*b2 - a2*b1 ;//det = A1*B2 - A2*B1
+					
+					if (i==0 && (j==i+1 || j==lineEquation.length-1)){ 
+						if(det == 0){ //det =0, means Lines are parallel, so the line is overlaping
+							//alert("run1 i="+i+ " j="+j);
+							return false;
+						}
+					} else{
+						if(i!=0 && (j== i+1 || j==i-1)){ 
+							if(det == 0){  //det =0, means Lines are parallel, so the line is overlaping
+								//alert("run2 i="+i+ " j="+j);
+								return false;
+							}
+						}else{
+							if(det != 0){ //line has intersect point (the point can inside the polygon or outside )
+								var x = (b2 * c1 - b1 * c2) / det;
+								var y = (a1 * c2 - a2 * c1) / det;
+
+								var intersectPointOni = checkIntersectPointOnLine(lineEquation[i][3],lineEquation[i][4],lineEquation[i][5],lineEquation[i][6],x,y);
+								var intersectPointOnj = checkIntersectPointOnLine(lineEquation[j][3],lineEquation[j][4],lineEquation[j][5],lineEquation[j][6],x,y);
+								if (intersectPointOni && intersectPointOnj){
+									return false;
+								}
+							}
+						}
+					}
+				}
+			}
+			return true;
+		}
+		
+		function checkIntersectPointOnLine(point1x,point1y,point2x,point2y,x,y){
+			var intersectInRangeX = false;
+			var intersectInRangeY = false;
+			//check min(x1,x2) <= x <= max(x1,x2)
+			if (point2x > point1x){
+				if ( point1x <= x && x <=point2x){
+					intersectInRangeX = true;
+				}
+			}
+			else{
+				if ( point2x <= x && x <=point1x){
+					intersectInRangeX = true;
+				}
+			}
+			
+			//check min(y1,y2) <= y <= max(y1,y2)
+			if (point2y > point1y){
+				if ( point1y <= y && y <=point2y){
+					intersectInRangeY = true;
+				}
+			}
+			else{
+				if ( point2y <= y && y <=point1y){
+					intersectInRangeY = true;
+				}
+			}
+			
+			if(intersectInRangeX && intersectInRangeY){
+				return true; //intersect point on the line
+			}
+			else{
+				return false;
+			}
+		}
+		
+		function checkIsConvex(){// return true= is Convex, false = is concave 
+			var linePoint = [];
+			var index =0;
+			var numberOfAngle=0;
+			var sumAngle = 0;
+			var sumInteriorAngles  = (pointVertices.length/2 - 2) * 180 ; //Sum of Interior Angles: (n-2)*180 where n is Sides
+			while(numberOfAngle < pointVertices.length/2){
+				//get 2 point coordinates
+				var pointBeforeX;
+				var pointBeforeY;
+				var pointX;
+				var pointY;
+				var pointAfterX;
+				var pointAfterY;
+				index = numberOfAngle*2;
+				
+				if (index==0){
+					pointBeforeX = pointVertices[pointVertices.length-2];
+					pointBeforeY = pointVertices[pointVertices.length-1];
+				}else{
+					pointBeforeX = pointVertices[index-2];
+					pointBeforeY = pointVertices[index-1];
+				}
+				pointX = pointVertices[index];
+				pointY = pointVertices[index+1];
+				
+				if (numberOfAngle == pointVertices.length/2-1){
+					pointAfterX = pointVertices[0];
+					pointAfterY = pointVertices[1];
+				}else{
+					pointAfterX = pointVertices[index+2];
+					pointAfterY = pointVertices[index+3];
+				}
+
+				//alert("index="+index+"pointBeforeX="+pointBeforeX+" pointBeforeY="+pointBeforeY +"pointX="+pointX+" pointY="+pointY + " pointAfterX="+pointAfterX+" pointAfterY="+pointAfterY);
+				
+				//using COSINE LAW to get angle // c^2 = a^2 +b^2 - 2ab cosC
+				var lengthA , lengthB, lengthC, cosangleC, angleC;
+				lengthA = Math.sqrt ((pointX - pointBeforeX) * (pointX - pointBeforeX) + (pointY - pointBeforeY) * (pointY - pointBeforeY));
+				lengthB = Math.sqrt ((pointX - pointAfterX) * (pointX - pointAfterX) + (pointY - pointAfterY) * (pointY - pointAfterY));
+				lengthC = Math.sqrt ((pointBeforeX - pointAfterX) * (pointBeforeX - pointAfterX) + (pointBeforeY - pointAfterY) * (pointBeforeY - pointAfterY));
+				
+				//alert("lengthA="+lengthA+" lengthB="+lengthB+ " lengthC="+lengthC);
+				cosangleC = ((lengthC * lengthC) - (lengthA * lengthA) - (lengthB * lengthB))/ (-2 * lengthA * lengthB) ;
+				angleC = Math.acos(cosangleC) * (180 / Math.PI) ;
+				//alert(angleC);
+				sumAngle = sumAngle +angleC;
+				numberOfAngle++;
+			}
+			
+			//alert(sumAngle);
+			if ( sumInteriorAngles-1 <=sumAngle && sumAngle<=sumInteriorAngles+1){ //allow the +1 mistake becuase of calculation 
+				return true;
+			}else{
+				return false;
+			}
+	
+		/*
+			var lineVector = [];
+			var index =0;
+			var numberOfLine=0;
+			while(numberOfLine < pointVertices.length/2){
+				//get 2 point coordinates
+				var point1x;
+				var point1y;
+				var point2x;
+				var point2y;
+				index = numberOfLine*2;
+				
+				point1x = pointVertices[index];
+				index++;
+				point1y = pointVertices[index];
+				index++;
+
+				// last point
+				if(index >= pointVertices.length-1){
+					point2x = pointVertices[0];
+					point2y = pointVertices[1];
+				}
+				else{
+					point2x = pointVertices[index];
+					index++;
+					point2y = pointVertices[index];
+					index++;
+				}
+				//alert("index="+index+"point1x="+point1x+" point1y="+point1y + " point2x="+point2x+" point2y="+point2y);
+				
+				//build vector value
+				var vectorX = point2x - point1x; // AB = OB-OA (x coordinate)
+				var vectorY = point2y - point1y; // AB = OB-OA (y coordinate) 
+				var  vectorLength = Math.sqrt(vectorX * vectorX + vectorY * vectorY); // |AB| = sprt(x^2 + y^2)
+				
+				var temp = [vectorX,vectorY,vectorLength]
+				lineVector.push(temp);	
+				alert("index="+index+"vectorX="+vectorX+" vectorY="+vectorY + " vectorLength="+vectorLength);
+				numberOfLine++;
+			}
+			//alert(lineVector.length);
+			
+			// find angle between two vectors using dot product 
+			var angle=[];
+			var i;
+			var sumAngle = 0;
+			var sumInteriorAngles  = (lineVector.length - 2) * 180 ; //Sum of Interior Angles: (n-2)*180 where n is Sides
+			for (i = 0; i < lineVector.length; i++){
+				var vector1x = lineVector[i][0];
+				var vector1y = lineVector[i][1];
+				var vector1lenght = lineVector[i][2];
+				
+				var vector2x, vector2y,vector2lenght;
+				if (i == lineVector.length-1){
+					vector2x = lineVector[0][0];
+					vector2y = lineVector[0][1];
+					vector2lenght = lineVector[0][2];
+				}else{
+					vector2x = lineVector[i+1][0];
+					vector2y = lineVector[i+1][1];
+					vector2lenght = lineVector[i+1][2];
+				}
+	
+				var temp1 = (vector1x * vector2x + vector1y * vector2y) / (vector1lenght * vector2lenght);
+				angle[i]= Math.acos(temp1) * (180 / Math.PI) ;
+			}
+			for (i = 0; i < angle.length; i++){
+				sumAngle = sumAngle + angle[i];
+				alert(angle[i]);
+			}
+			
+			alert("sumAngle"+sumAngle);
+			alert("sumInteriorAngles -1 "+ (sumInteriorAngles-1));
+			alert("sumInteriorAngles +1"+ (sumInteriorAngles+1));
+			
+			
+			if ( sumInteriorAngles-1 <=sumAngle && sumAngle<=sumInteriorAngles+1){ //allow the +1 mistake becuase of calculation 
+				return true;
+			}else{
+				return false;
+			}
+			*/
+			
+		}
+		
+		function saveTextAsFile(){
+			//parpare the test in the file
+			var textToWrite="[" + pointVertices.toString() + "]";
+			
+			var textFileAsBlob = new Blob([textToWrite], {type:'text/plain'});
+			var downloadLink = document.createElement("a");
+			
+			if (window.webkitURL != null){
+				// Chrome allows the link to be clicked
+				// without actually adding it to the DOM.
+				downloadLink.download = "polygon";
+				downloadLink.innerHTML = "Download File";
+				downloadLink.href = window.webkitURL.createObjectURL(textFileAsBlob);
+			}
+			else{
+				// Firefox requires the link to be added to the DOM
+				// before it can be clicked.
+				downloadLink.download = "polygon.txt";
+				downloadLink.innerHTML = "Download File";
+				downloadLink.href = window.URL.createObjectURL(textFileAsBlob);
+				
+				downloadLink.onclick = function(e){
+					document.body.removeChild(e.target);
+				}
+				downloadLink.style.display = "none";
+				document.body.appendChild(downloadLink);
+			}
+			downloadLink.click();
+		}
+
+		/*
+		function checkPointVertices(){
+			var text = "&NewLine; pointVertices.length=" +pointVertices.length+"<ul>";
+			var index = 0;
+			while(index < pointVertices.length){
+				text += "<li> &lpar;" + pointVertices[index] + "&nbsp;&comma;&nbsp;" + pointVertices[index+1] + " &rpar; </li>" ;
+				index++;
+				index++;				
+			}
+			text += "</ul>";
+			document.getElementById("allPoint").innerHTML = text;
+		}
+		*/
+	</script>
+
+</head>
+
+<body onload="initWebGL()">
+<div style="position: relative;">
+	<canvas id="myCanvas" width="400" height="400">
+		Your browser does not support the HTML5 canvas element.
+	</canvas>
+	<table>
+	  <tr><td><b>d-KEY: to enter the polygon drawing mode to draw point</b></td></tr>
+	  <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;In the drawing mode: <br/> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - Click LEFT-MOUSE-BUTTON to draw the point<br/> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - Click ESC-KEY to end the vertex drawing and draw the closed poly-line </td></tr>
+  	  <tr><td><b>s-KEY: to check for a valid polygon and then save the current polygon to txt file</b></td></tr>
+  	  <tr><td><b>v-key: to enter the vertex repositioning mode to pick a vertex and reposition it</b></td></tr>
+	  <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;In the vertex repositioning: <br/> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - Click LEFT-MOUSE-BUTTON to reposition vertex<br/> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; - Click ESC-KEY to end the vertex repositioning mode </td></tr>
+	  </table>
+<!--
+	<button onclick="checkPointVertices()">click me to show the pointVertices array</button>
+	<p id="allPoint"></p>
+-->
+
+</div>
+</body>
+
+</html>

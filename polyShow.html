@@ -1,0 +1,250 @@
+<!--
+	Student Name = Kwok Sin Man 
+	Student Number = 13090903d
+	Comp4422 Assignment 1 - polyShow.html
+-->
+<!doctype html>
+<html>
+<head>
+<title>Poly Show</title>
+    <style>
+      body {
+        margin: 0px;
+        padding: 0px;
+		background-color: white;
+      }
+	  canvas {
+		background-color: black;
+	  }
+    </style>
+	
+	<script id="shader-vs" type="x-shader/x-vertex">
+		attribute vec2 aVertexPosition;
+		attribute vec2 aTextureCoord;
+		varying vec2 vTextureCoord;
+		void main(void) {
+			gl_PointSize = 5.0; // size of points in pixels
+			gl_Position = vec4(aVertexPosition,0.0, 1.0);
+			vTextureCoord = aTextureCoord;
+		}
+	</script>
+
+	<script id="shader-fs" type="x-shader/x-fragment">
+		precision mediump float;
+		varying vec2 vTextureCoord;
+		uniform sampler2D uSampler;
+		void main(void) {
+			//gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+			gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.x, vTextureCoord.y));
+		}
+	</script>
+		
+	<script>
+		var	gl		= null,
+			canvas		= null,
+			glProgram	= null,
+			fragmentShader	= null,
+			vertexShader	= null;
+
+		var	vertexPositionAttribute	= null,
+			vertexTextureCoordAttribute = null,
+			pointVerticeBuffer	= null,
+			textureCoordBuffer = null;			
+				
+		var polygonTexture;
+		var pointVertices = [];
+		var cubeVertexIndices = [];
+		
+		function loadFileAsText()
+		{
+			//alert("start loading");
+			var fileToLoad = document.getElementById("fileToLoad").files[0];
+
+			var fileReader = new FileReader();
+			fileReader.onload = function(fileLoadedEvent) 
+			{
+				
+				// read the vertice from txt file
+				var textFromFileLoaded = fileLoadedEvent.target.result;
+				textFromFileLoaded = textFromFileLoaded.replace("[","");
+				textFromFileLoaded = textFromFileLoaded.replace("]","");
+				pointVertices = textFromFileLoaded.split(",");
+				//draw polygon with texture;
+				initWebGL();
+				
+			};
+			fileReader.readAsText(fileToLoad, "UTF-8");
+		}
+		
+		function initWebGL()
+		{
+			canvas = document.getElementById("myCanvas");
+			try{
+				gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+			}catch(e){
+				alert("Error: No webgl context");
+			}
+
+
+			if(gl)
+			{
+			//	alert("setup WebGL");
+				setupWebGL();
+			//	alert("initShaders");
+				initShaders();
+			//	alert("initBuffers");
+				initBuffers();
+			//	alert("initTexture");
+				initTexture();
+			//	alert("drawScene");
+			}else{
+				alert( "Error: Your browser does not appear to support WebGL.");
+			}
+		}
+		
+		function setupWebGL()
+		{
+			gl.clearColor(0.0, 0.0, 0.0, 1.0);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+		}
+		
+		function initShaders()
+		{
+			var	fs_source = document.getElementById('shader-fs').innerHTML,
+				vs_source = document.getElementById('shader-vs').innerHTML;
+
+			vertexShader   = makeShader(vs_source, gl.VERTEX_SHADER);
+			fragmentShader = makeShader(fs_source, gl.FRAGMENT_SHADER);
+
+			glProgram = gl.createProgram();
+			
+			gl.attachShader(glProgram, vertexShader);
+			gl.attachShader(glProgram, fragmentShader);
+			
+			gl.linkProgram(glProgram);
+			if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
+				alert("Unable to initialize the shader program.");
+			}
+			gl.useProgram(glProgram);
+		}
+		
+		function makeShader(src, type)
+		{
+				// compile the vertex shader
+				var shader = gl.createShader(type);
+				gl.shaderSource(shader, src);
+				gl.compileShader(shader);
+				if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+					alert("Error compiling shader: " + gl.getShaderInfoLog(shader));
+				}
+				return shader;
+		}	
+		
+		function initBuffers()
+		{
+			pointVerticeBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, pointVerticeBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointVertices), gl.STATIC_DRAW);
+						
+	        textureCoordBuffer = gl.createBuffer();
+	        gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointVertices), gl.STATIC_DRAW);
+			
+			
+			var index = 0;
+			var j;
+			//alert(pointVertices.length/2-3);
+			while (index < pointVertices.length/2-2){
+					cubeVertexIndices[index*3] = "0";
+					cubeVertexIndices[index*3+1] = index+1;
+					cubeVertexIndices[index*3+2] = index+2;
+				index++;
+			}
+			
+			
+			cubeVertexIndexBuffer = gl.createBuffer();
+			cubeVertexIndexBuffer.number_vertex_points = cubeVertexIndices.length;
+	        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+	        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cubeVertexIndices), gl.STATIC_DRAW);
+				
+		}
+		
+		function initTexture() 
+	    {
+			polygonTexture = gl.createTexture();
+	        polygonTexture.image = new Image();
+	        polygonTexture.image.src = "data/texture.jpg";
+	        polygonTexture.image.onload = function ()
+	        {
+	            gl.bindTexture(gl.TEXTURE_2D, polygonTexture);
+	            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+	            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, polygonTexture.image);
+	            //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+				//gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	        	gl.bindTexture(gl.TEXTURE_2D, null);
+
+				drawScene();
+	        }
+			//alert("Polygon and texture image are loaded. It will be shown on screen. Cheers.");
+	    }
+
+		function drawScene()
+		{
+			vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+			gl.enableVertexAttribArray(vertexPositionAttribute);
+			gl.bindBuffer(gl.ARRAY_BUFFER, pointVerticeBuffer);
+			gl.vertexAttribPointer(vertexPositionAttribute, 2,gl.FLOAT, false, 0, 0);
+			
+			vertexTextureCoordAttribute = gl.getAttribLocation(glProgram, "aTextureCoord");
+			gl.enableVertexAttribArray(vertexTextureCoordAttribute);
+        	gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+        	gl.vertexAttribPointer(vertexTextureCoordAttribute, 2,gl.FLOAT, false, 0, 0);
+	        	
+        	glProgram.samplerUniform = gl.getUniformLocation(glProgram, "uSampler");
+        	gl.activeTexture(gl.TEXTURE0);
+        	gl.bindTexture(gl.TEXTURE_2D, polygonTexture);
+        	gl.uniform1i(glProgram.samplerUniform, 0);
+			///gl.drawArrays(gl.LINE_LOOP, 0, pointVertices.length/2);
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+			gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.number_vertex_points, gl.UNSIGNED_SHORT, 0);
+			//alert("done");
+		}
+		
+
+/*
+		function checkPointVertices(){
+			var text = "&NewLine; cubeVertexIndices.length=" +cubeVertexIndices.length+"<ul>";
+			var index = 0;
+			while(index < cubeVertexIndices.length){
+				text += "<li> &lpar;" + cubeVertexIndices[index] + "&nbsp;&comma;&nbsp;" + cubeVertexIndices[index+1] + " &rpar; </li>" ;
+				index++;
+				index++;				
+			}
+			text += "</ul>";
+			document.getElementById("allPoint").innerHTML = text;
+		}
+	*/	
+		
+	</script>
+
+</head>
+
+<body>
+	<canvas id="myCanvas" width="500" height="500">
+		Your browser does not support the HTML5 canvas element.
+	</canvas>
+	<table>
+		<tr>
+			<td>Select a Text File to Load:</td>
+			<td><input type="file" id="fileToLoad"><button onclick="loadFileAsText();">Load Selected File</button></td>
+		</tr>
+	</table>
+	<!--
+	<button onclick="checkPointVertices()">click me to show the pointVertices array</button>
+	<p id="allPoint"></p>
+	-->
+</body>
+
+</html>
